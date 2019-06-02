@@ -22,7 +22,9 @@ class Table(val name: String, val colTypes: List[(String, ColType)]) {
 
   def allRecords: VectorIterator[Vector[Lit]] = records.iterator
 
-  def getValue(colName: String, record: Vector[Lit]): Lit = record(colnameToLoc(colName)._1)
+  def getValue(colName: String, record: Vector[Lit]): Lit =
+    // FIXME: May Cause A Runtime Error
+    record(colnameToLoc(colName)._1)
 
   def deleteIf(pred: Vector[Lit] => Boolean): Unit = records = records.filterNot(pred)
 }
