@@ -14,10 +14,10 @@ object Executor {
     case Delete(tblName, pred) => doDelete(tblName, pred)
   }
 
-  var tables: Map[String, (List[(String, ColType)], List[List[Lit]])] = Map()
+  var tables: Map[String, Table] = Map()
 
   def doCreateTable(tblName: String, cols: List[(String, ColType)]): Unit = {
-    tables = tables.updated(tblName, (cols, List()))
+    tables = tables.updated(tblName, Table(tblName, cols))
     println("create table successful!")
   }
 
@@ -27,58 +27,38 @@ object Executor {
   }
 
   def doInsert(tblName: String, values: List[Lit]): Unit = {
-    tables.get(tblName).map(i => (i._1, values :: i._2)).foreach(
-      newVs => tables = tables.updated(tblName, newVs)
-    )
-    println("insert successful!")
+    tables.get(tblName).foreach(t => {
+      t.insert(values.toVector)
+      println("insert successful!")
+    })
   }
 
-  def doSelect(tblName: String, pred: Pred): Unit = {
-    tables.get(tblName).foreach(i => {
-      def printAll(): Unit = println(i._2.map(_.map(_.show()).mkString(", ")).mkString("\n"))
-
-      pred match {
-        case Eq(ColName(n), r) =>
-          val idx = i._1.indexWhere(w => w._1 == n)
-          println(i._2.filter(rcd => rcd(idx) == r).map(i => i.map(_.show()).mkString(", ")).mkString("\n"))
-        case Eq(l, ColName(n)) =>
-          val idx = i._1.indexWhere(w => w._1 == n)
-          println(i._2.filter(rcd => rcd(idx) == l).map(i => i.map(_.show()).mkString(", ")).mkString("\n"))
-        case Eq(l, r) => if (l == r) printAll()
-        case Neq(ColName(n), r) =>
-          val idx = i._1.indexWhere(w => w._1 == n)
-          println(i._2.filter(rcd => rcd(idx) != r).map(i => i.map(_.show()).mkString(", ")).mkString("\n"))
-        case Neq(l, ColName(n)) =>
-          val idx = i._1.indexWhere(w => w._1 == n)
-          println(i._2.filter(rcd => rcd(idx) != l).map(i => i.map(_.show()).mkString(", ")).mkString("\n"))
-        case Neq(l, r) => if (l != r) printAll()
-        case AlwaysTrue() => printAll()
+  def doSelect(tblName: String, cond: Cond): Unit = {
+    tables.get(tblName).foreach(t => {
+        t.allRecords.foreach(rc => {
+          def fun(exp: Exp): Lit = exp match {
+            case ColName(n) => t.getValue(n, rc)
+            case o: Lit => o
+          }
+          if (cond.pred(fun)(Lit.ordering))
+            println(rc.map(_.show()).mkString(", "))
+        })
       }
-    }
     )
   }
 
-  def doDelete(tblName: String, pred: Pred): Unit = {
-    tables.get(tblName).foreach(i => {
-      def deleteAll(): Unit = tables = tables.updated(tblName, (i._1, List()))
-      pred match {
-        case Eq(ColName(n), r) =>
-          val idx = i._1.indexWhere(w => w._1 == n)
-          tables = tables.updated(tblName, (i._1, i._2.filterNot(rcd => rcd(idx) == r)))
-        case Eq(l, ColName(n)) =>
-          val idx = i._1.indexWhere(w => w._1 == n)
-          tables = tables.updated(tblName, (i._1, i._2.filterNot(rcd => rcd(idx) == l)))
-        case Eq(l, r) => if (l == r) deleteAll()
-        case Neq(ColName(n), r) =>
-          val idx = i._1.indexWhere(w => w._1 == n)
-          tables = tables.updated(tblName, (i._1, i._2.filterNot(rcd => rcd(idx) != r)))
-        case Neq(l, ColName(n)) =>
-          val idx = i._1.indexWhere(w => w._1 == n)
-          tables = tables.updated(tblName, (i._1, i._2.filterNot(rcd => rcd(idx) != l)))
-        case Neq(l, r) => if (l != r) deleteAll()
-        case AlwaysTrue() => deleteAll()
+  def doDelete(tblName: String, cond: Cond): Unit = {
+    tables.get(tblName).foreach(t => {
+        def pred(rc: Vector[Lit]): Boolean = {
+          def fun(exp: Exp): Lit = exp match {
+            case ColName(n) => t.getValue(n, rc)
+            case o: Lit => o
+          }
+          cond.pred(fun)(Lit.ordering)
+        }
+
+        t.deleteIf(pred)
       }
-    }
     )
     println("delete successful!")
   }
@@ -88,13 +68,15 @@ object Executor {
       "create table t1 (id int, name string, score double);",
       "insert into t1 values (0, 'tangent', 11.1);",
       "select * from t1 where name = 'tangent';",
-      "insert into t1 values (1, 'gaufoo', 11.1);",
-      "insert into t1 values (2, 'doris', 11.1);",
+      "insert into t1 values (1, 'gaufoo', 12.1);",
+      "insert into t1 values (2, 'doris', 13.1);",
       "select * from t1 where name <> 'tangent';",
+      "select * from t1 where score >= 12;",
+      "select * from t1 where score < 12;",
       "select * from t1;",
       "delete from t1 where id = 1;",
       "select * from t1;",
-      "delete from t1;",
+      "delete from t1 where id >= 0;",
       "select * from t1;",
       "drop table t1;"
     )
