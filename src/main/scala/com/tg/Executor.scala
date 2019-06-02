@@ -10,7 +10,7 @@ object Executor {
     case CreateTable(tblName, cols) => doCreateTable(tblName, cols)
     case DropTable(tblName) => doDropTable(tblName)
     case Insert(tblName, values) => doInsert(tblName, values)
-    case Select(tblName, pred) => doSelect(tblName, pred)
+    case Select(tblName, newCols, pred) => doSelect(tblName, newCols, pred)
     case Delete(tblName, pred) => doDelete(tblName, pred)
   }
 
@@ -33,15 +33,17 @@ object Executor {
     })
   }
 
-  def doSelect(tblName: String, cond: Cond): Unit = {
+  def doSelect(tblName: String, newCols: NewCols, cond: Cond): Unit = {
     tables.get(tblName).foreach(t => {
         t.allRecords.foreach(rc => {
           def fun(exp: Exp): Lit = exp match {
             case ColName(n) => t.getValue(n, rc)
             case o: Lit => o
           }
-          if (cond.pred(fun)(Lit.ordering))
-            println(rc.map(_.show()).mkString(", "))
+          if (cond.pred(fun)(Lit.ordering)) {
+            val cols = if (newCols == All) t.colTypes.map(_._1) else newCols.cols
+            println(cols.map(t.getValue(_, rc).show()).mkString(", "))
+          }
         })
       }
     )
@@ -72,8 +74,9 @@ object Executor {
       "insert into t1 values (2, 'doris', 13.1);",
       "select * from t1 where name <> 'tangent';",
       "select * from t1 where score >= 12;",
+      "select id, score from t1 where score > 13;",
       "select * from t1 where score < 12;",
-      "select * from t1;",
+      "select name from t1;",
       "delete from t1 where id = 1;",
       "select * from t1;",
       "delete from t1 where id >= 0;",

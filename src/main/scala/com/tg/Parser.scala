@@ -12,7 +12,7 @@ object Parser extends RegexParsers {
   final case class CreateTable(tblName: String, cols: List[(String, ColType)]) extends Command
   final case class DropTable(tblName: String) extends Command
   final case class Insert(tblName: String, values: List[Lit]) extends Command
-  final case class Select(tblName: String, cond: Cond) extends Command
+  final case class Select(tblName: String, newCol: NewCols, cond: Cond) extends Command
   final case class Delete(tblName: String, cond: Cond) extends Command
 
   sealed trait ColType {
@@ -30,6 +30,12 @@ object Parser extends RegexParsers {
 //    override def fromString(string: String): Option[Lit] =
 //      Option(LitStr(string))
   }
+
+  class NewCols(val cols: List[String])
+  object NewCols {
+    def apply(cols: List[String]): NewCols = new NewCols(cols)
+  }
+  case object All extends NewCols(List())
 
   sealed trait Lit extends Exp {
     def show(): String
@@ -91,7 +97,7 @@ object Parser extends RegexParsers {
   def createTable: Parser[CreateTable] = "create" ~> "table" ~> identifier ~ ("(" ~> repsep(defCol, ",") <~ ")") ^^ {i => CreateTable(i._1, i._2)}
   def dropTable: Parser[DropTable] = "drop" ~> "table" ~> identifier ^^ DropTable
   def insert: Parser[Insert] = "insert" ~> "into" ~> identifier ~ ("values" ~> ("(" ~> repsep(lit, ",") <~ ")")) ^^ {i => Insert(i._1, i._2)}
-  def select: Parser[Select] = "select" ~> "*" ~> "from" ~> identifier ~ cond ^^ { case n~p => Select(n, p)}
+  def select: Parser[Select] = "select" ~> newCols ~ ("from" ~> identifier) ~ cond ^^ { case c~n~p => Select(n, c, p)}
   def delete: Parser[Delete] = "delete" ~> "from" ~> identifier ~ cond ^^ { case n~p => Delete(n, p)}
 
   def identifier: Parser[String] = """[_a-zA-Z][_a-zA-Z0-9]*""".r ^^ {_.toString}
@@ -100,6 +106,8 @@ object Parser extends RegexParsers {
                                  "string" ^^^ ColString
 
   def defCol: Parser[(String, ColType)] = identifier ~ colType ^^ {i => (i._1, i._2)}
+
+  def newCols: Parser[NewCols] = "*" ^^^ All | repsep(identifier, ",") ^^ (i => NewCols(i))
 
   def lit: Parser[Lit] = litDbl | litInt | litStr
   def litInt: Parser[LitInt] = """\d+""".r ^^ {i => LitInt(i.toInt)}
